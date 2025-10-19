@@ -3,18 +3,18 @@ import heapq
 from dataclasses import dataclass
 from typing import TypeAlias, Generator, Literal
 
-cell: TypeAlias = tuple[int, int]
-frozenset_cells: TypeAlias = frozenset[cell]
+cell_tuple: TypeAlias = tuple[int, int]
+cell_frozenset: TypeAlias = frozenset[cell_tuple]
 object_name_type: TypeAlias = Literal['A'] | Literal['B'] | Literal['C'] | Literal['D']
 
 @dataclass
 class Obj:
     name: object_name_type 
-    curPos: cell
+    curPos: cell_tuple
     energy: int
     moved: bool = False
 
-    def move(self, to: cell) -> tuple['Obj', int]:
+    def move(self, to: cell_tuple) -> tuple['Obj', int]:
         wastedEnergy = self.energy * (abs(to[1] - self.curPos[1]) + to[0] + self.curPos[0])
         return Obj(
             name=self.name,
@@ -25,7 +25,7 @@ class Obj:
 
 INF = 10**9
 list_objects: TypeAlias = list[Obj]
-best_energy: dict[tuple[frozenset_cells, ...], int] = dict()
+best_energy: dict[tuple[cell_frozenset, ...], int] = dict()
 
 object_room: dict[str, int] = {
     'A': 2,
@@ -52,44 +52,52 @@ class State:
     def end_state(self) -> bool:
         return all(obj.curPos[1] == object_room[obj.name] for obj in self.objects)
     
-    def next_states(self) -> Generator['State', None, None]:
-        objects_in_hallway = self._get_objects_in_hallway()
-        for obj in objects_in_hallway:
-            top_cell_room = self._get_top_room_cell(object_room[obj.name])
+    def generate_next_states(self) -> Generator['State', None, None]:
+        for obj in self._get_objects_in_hallway():
+            target_room = object_room[obj.name]
+            top_cell_room = self._get_top_room_cell(target_room)
             if self._can_enter_room(obj) and self._can_move_in_hallway(obj, (0, top_cell_room[1])):
                 yield self._move_object(obj, top_cell_room)
+
         for room_number in room_numbers:
             obj = self._get_top_room_obj(room_number)
             if obj is None or obj.moved:
                 continue
+            
             if obj.curPos[1] == object_room[obj.name] and \
                 all(x.name == obj.name for x in self._get_objects_in_room(room_number)):
                     continue
-            hallway_cells_without_room = [(0, i) for i in range(11) if i not in room_numbers]
-            for c in hallway_cells_without_room:
-                if self._can_move_in_hallway(obj, c):
-                    yield self._move_object(obj, c)
+            
+            available_hallway_cells = [(0, i) for i in range(11) if i not in room_numbers]
+            for cell in available_hallway_cells:
+                if self._can_move_in_hallway(obj, cell):
+                    yield self._move_object(obj, cell)
+
             if self._can_enter_room(obj) and self._can_move_in_hallway(obj, (0, object_room[obj.name])):
-                yield self._move_object(obj, self._get_top_room_cell(object_room[obj.name]))
+                target_cell = self._get_top_room_cell(object_room[obj.name])
+                yield self._move_object(obj, target_cell)
 
     # Эвристика для алгоритма A*
     def calculate_heuristic(self) -> int:
         total_cost = 0
         for obj in self._get_objects_in_hallway():
-            room_pos = object_room[obj.name]
-            total_cost += abs(obj.curPos[1] - room_pos) + 1
+            target_room = object_room[obj.name]
+            distance = abs(obj.curPos[1] - target_room) + 1
+            total_cost += abs(obj.curPos[1] - target_room) + 1
+
         for room_number in room_numbers:
             objects_in_room = self._get_objects_in_room(room_number)
             for i, obj in enumerate(objects_in_room):
                 if object_room[obj.name] != room_number:
-                    room_pos = object_room[obj.name]
-                    current_room_pos = room_number
+                    target_room = object_room[obj.name]
+                    current_pos = room_number
                     max_depth = len(self.objects) // 4
                     depth = max_depth - len(objects_in_room) + i
-                    total_cost += object_energy[obj.name] * (abs(current_room_pos - room_pos) + depth + 2)
+                    distance = (abs(current_pos - target_room) + depth + 2)
+                    total_cost += object_energy[obj.name] * distance
         return total_cost
 
-    def _move_object(self, obj: Obj, to: cell) -> 'State':
+    def _move_object(self, obj: Obj, to: cell_tuple) -> 'State':
         new_objects = list(self.objects)
         new_obj, wasted_energy = obj.move(to)
         for i in range(len(new_objects)):
@@ -112,7 +120,7 @@ class State:
             return None
         return objects_in_room[-1]
 
-    def _get_top_room_cell(self, room_number: int) -> cell:
+    def _get_top_room_cell(self, room_number: int) -> cell_tuple:
         depth = len(self.objects) // 4
         objects_in_room = self._get_objects_in_room(room_number)
         return depth - len(objects_in_room), room_number 
@@ -122,14 +130,14 @@ class State:
         return all(x.name == obj.name for x in self._get_objects_in_room(room_number)) and \
               self._can_move_in_hallway(obj, (0, room_number))
     
-    def _can_move_in_hallway(self, obj: Obj, hallway_cell: cell) -> bool:
+    def _can_move_in_hallway(self, obj: Obj, hallway_cell: cell_tuple) -> bool:
         objects_in_hallway = self._get_objects_in_hallway()
         min_coord = min(hallway_cell[1], obj.curPos[1])
         max_coord = max(hallway_cell[1], obj.curPos[1])
         return len([x for x in objects_in_hallway if x != obj and min_coord <= x.curPos[1] <= max_coord]) == 0
 
 
-    def get_object_positions(self) -> tuple[frozenset_cells, ...]:
+    def get_object_positions(self) -> tuple[cell_frozenset, ...]:
         return tuple(
             [frozenset([obj.curPos for obj in self.objects if obj.name == obj_name]) for obj_name in object_names])
     
@@ -160,7 +168,7 @@ def solve(lines: list[str]) -> int:
         if cur_state.end_state():
             result = min(result, cur_state.energy)
             continue
-        for next_state in cur_state.next_states():
+        for next_state in cur_state.generate_next_states():
             next_positions = next_state.get_object_positions()
             if next_state.energy < best_energy.get(next_positions, INF):
                 best_energy[next_positions] = next_state.energy

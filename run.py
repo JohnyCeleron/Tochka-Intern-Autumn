@@ -42,7 +42,7 @@ object_energy: dict[str, int] = {
 }
 
 object_names: list[object_name_type] = ['A', 'B', 'C', 'D']
-room_numbers: list[int] = [2, 4, 6, 8]
+room_position_numbers: list[int] = [2, 4, 6, 8]
 
 @dataclass
 class State:
@@ -59,16 +59,16 @@ class State:
             if self._can_enter_room(obj) and self._can_move_in_hallway(obj, (0, top_cell_room[1])):
                 yield self._move_object(obj, top_cell_room)
 
-        for room_number in room_numbers:
-            obj = self._get_top_room_obj(room_number)
+        for room_pos in room_position_numbers:
+            obj = self._get_top_room_obj(room_pos)
             if obj is None or obj.moved:
                 continue
             
             if obj.curPos[1] == object_room[obj.name] and \
-                all(x.name == obj.name for x in self._get_objects_in_room(room_number)):
+                all(x.name == obj.name for x in self._get_objects_in_room(room_pos)):
                     continue
             
-            available_hallway_cells = [(0, i) for i in range(11) if i not in room_numbers]
+            available_hallway_cells = [(0, i) for i in range(11) if i not in room_position_numbers]
             for cell in available_hallway_cells:
                 if self._can_move_in_hallway(obj, cell):
                     yield self._move_object(obj, cell)
@@ -85,7 +85,7 @@ class State:
             distance = abs(obj.curPos[1] - target_room) + 1
             total_cost += abs(obj.curPos[1] - target_room) + 1
 
-        for room_number in room_numbers:
+        for room_number in room_position_numbers:
             objects_in_room = self._get_objects_in_room(room_number)
             for i, obj in enumerate(objects_in_room):
                 if object_room[obj.name] != room_number:

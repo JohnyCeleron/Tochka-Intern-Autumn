@@ -83,18 +83,16 @@ class State:
         for obj in self._get_objects_in_hallway():
             target_room = object_room[obj.name]
             distance = abs(obj.curPos[1] - target_room) + 1
-            total_cost += abs(obj.curPos[1] - target_room) + 1
+            total_cost += distance * obj.energy
 
-        for room_number in room_position_numbers:
-            objects_in_room = self._get_objects_in_room(room_number)
-            for i, obj in enumerate(objects_in_room):
-                if object_room[obj.name] != room_number:
-                    target_room = object_room[obj.name]
-                    current_pos = room_number
-                    max_depth = len(self.objects) // 4
-                    depth = max_depth - len(objects_in_room) + i
-                    distance = (abs(current_pos - target_room) + depth + 2)
-                    total_cost += object_energy[obj.name] * distance
+        for room_x in room_position_numbers:
+            objects_in_room = self._get_objects_in_room(room_x)
+            for obj in objects_in_room:
+                if object_room[obj.name] != room_x:
+                    target_room_x = object_room[obj.name]
+                    current_depth = obj.curPos[0]
+                    min_distance = current_depth + abs(room_x - target_room_x) + 1
+                    total_cost += min_distance * obj.energy
         return total_cost
 
     def _move_object(self, obj: Obj, to: cell_tuple) -> 'State':

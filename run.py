@@ -85,6 +85,7 @@ class State:
             distance = abs(obj.curPos[1] - target_room) + 1
             total_cost += distance * obj.energy
 
+
         for room_x in room_position_numbers:
             objects_in_room = self._get_objects_in_room(room_x)
             for obj in objects_in_room:

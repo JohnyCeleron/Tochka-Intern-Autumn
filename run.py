@@ -7,33 +7,14 @@ cell_tuple: TypeAlias = tuple[int, int]
 cell_frozenset: TypeAlias = frozenset[cell_tuple]
 object_name_type: TypeAlias = Literal['A'] | Literal['B'] | Literal['C'] | Literal['D']
 
-@dataclass
-class Obj:
-    name: object_name_type 
-    curPos: cell_tuple
-    energy: int
-    moved: bool = False
-
-    def move(self, to: cell_tuple) -> tuple['Obj', int]:
-        wastedEnergy = self.energy * (abs(to[1] - self.curPos[1]) + to[0] + self.curPos[0])
-        return Obj(
-            name=self.name,
-            curPos=to,
-            energy=self.energy,
-            moved=True
-        ), wastedEnergy
-
 INF = 10**9
-list_objects: TypeAlias = list[Obj]
 best_energy: dict[tuple[str, ...], int] = dict()
-
 object_room: dict[str, int] = {
     'A': 2,
     'B': 4,
     'C': 6,
     'D': 8
 }
-
 object_energy: dict[str, int] = {
     'A': 1,
     'B': 10,
@@ -44,14 +25,13 @@ object_energy: dict[str, int] = {
 object_names: list[object_name_type] = ['A', 'B', 'C', 'D']
 room_position_numbers: list[int] = [2, 4, 6, 8]
 
+depth_room = 0
+
 @dataclass
 class State:
     representation: tuple[str, ...] # первые 11 элементов - это коридор, потом идут комнаты
     energy: int = 0
 
-    def _get_depth_room(self) -> int:
-        return (len(self.representation) - 11) // 4
-    
     def _get_obj_name(self, obj_pos: cell_tuple) -> str:
         return self.representation[self._get_representation_index(obj_pos)]
     
@@ -60,15 +40,13 @@ class State:
         return object_energy[obj_name] * (abs(to[1] - cur_pos[1]) + to[0] + cur_pos[0])
     
     def _get_representation_index(self, pos: cell_tuple) -> int:
-        depth = self._get_depth_room()
         if pos[0] == 0:
             return pos[1]
-        return 11 + (pos[1] // 2 - 1) * depth + (pos[0] - 1)
+        return 11 + (pos[1] // 2 - 1) * depth_room + (pos[0] - 1)
     
     def end_state(self) -> bool:
-        depth = self._get_depth_room()
-        return all(self.representation[11 + depth * room_number + cur_depth] == obj_name \
-                    for cur_depth in range(depth) \
+        return all(self.representation[11 + depth_room * room_number + cur_depth] == obj_name \
+                    for cur_depth in range(depth_room) \
                     for room_number, obj_name in enumerate(object_names))
     
     def generate_next_states(self) -> Generator['State', None, None]:
@@ -135,30 +113,27 @@ class State:
     
     def _get_object_names_in_room(self, room_number: int) -> list[str]:
         list_representation = list(self.representation)
-        depth = self._get_depth_room()
-        start_index = 11 + depth * (room_number // 2 - 1)
-        return list_representation[start_index: start_index + depth]
+        start_index = 11 + depth_room * (room_number // 2 - 1)
+        return list_representation[start_index: start_index + depth_room]
 
     
     def _get_object_cells_in_hallway(self) -> Generator[cell_tuple, None, None]:
         return ((0, i) for i in range(11) if self.representation[i] != '')
 
     def _get_top_empty_in_room_cell(self, room_number: int) -> cell_tuple:
-        max_depth = self._get_depth_room()
         top_obj_in_room_cell = self._get_top_obj_in_room_cell(room_number)
         if top_obj_in_room_cell is None:
-            return max_depth, room_number
+            return depth_room, room_number
         return top_obj_in_room_cell[0] - 1, room_number
     
     def _get_top_obj_in_room_cell(self, room_number: int) -> cell_tuple | None:
         objects_in_room = self._get_object_names_in_room(room_number)
-        max_depth = self._get_depth_room()
         top_depth = 0
-        for depth in range(max_depth):
+        for depth in range(depth_room):
             if objects_in_room[depth] != '':
                 break
             top_depth += 1
-        if top_depth == max_depth:
+        if top_depth == depth_room:
             return None
         return top_depth + 1, room_number
 
@@ -194,9 +169,12 @@ def solve(lines: list[str]) -> int:
         минимальная энергия для достижения целевой конфигурации
     """
     # TODO: Реализация алгоритма
+    global depth_room
     heap: list[tuple[int, State]] = []
     result = INF
-    heapq.heappush(heap, (0, State(get_start_representation_state(lines))))
+    repr_state = get_start_representation_state(lines)
+    depth_room = (len(repr_state) - 11) // 4
+    heapq.heappush(heap, (0, State(repr_state)))
     while len(heap) > 0:
         _, cur_state = heapq.heappop(heap)
         current_positions = cur_state.get_representation()

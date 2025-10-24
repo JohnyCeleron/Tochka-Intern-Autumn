@@ -1,14 +1,12 @@
 import sys, time
 import heapq
 from dataclasses import dataclass
-from typing import TypeAlias, Generator, Literal
+from typing import TypeAlias, Generator
 
 cell_tuple: TypeAlias = tuple[int, int]
-cell_frozenset: TypeAlias = frozenset[cell_tuple]
-object_name_type: TypeAlias = Literal['A'] | Literal['B'] | Literal['C'] | Literal['D']
 
 INF = 10**9
-best_energy: dict[tuple[str, ...], int] = dict()
+best_energy: dict[tuple[int, ...], int] = dict()
 object_room: dict[str, int] = {
     'A': 2,
     'B': 4,
@@ -21,63 +19,98 @@ object_energy: dict[str, int] = {
     'C': 100,
     'D': 1000
 }
+object_from_bitmap: dict[int, str] = {
+    1: 'A',
+    2: 'B',
+    4: 'C',
+    8: 'D',
+    0: '',
+}
+object_to_bitmap: dict[str, int] = {
+    'A': 1,
+    'B': 2,
+    'C': 4,
+    'D': 8,
+    '': 0,
+}
 
-object_names: list[object_name_type] = ['A', 'B', 'C', 'D']
+# по позизции комнаты сопоставляется bitmap комнаты, заполненной объектами своего типа
+bitmap_full_room_pos: dict[int, int] = {
+    8: 34952, # 1000100010001000
+    2: 4369, # 0001000100010001
+    4: 8738, #0010001000100010
+    6: 17476, #0100010001000100
+}
+hallway_bitmap = 16492674416640 # 11110000000000000000000000000000000000000000
+
+object_names: list[str] = ['A', 'B', 'C', 'D']
 room_position_numbers: list[int] = [2, 4, 6, 8]
-
 depth_room = 0
 
 @dataclass
 class State:
-    representation: tuple[str, ...] # первые 11 элементов - это коридор, потом идут комнаты
+    #TODO: representation: tuple[int, int, int, int, int] - побитовые маски: коридор и четыре комнаты
+    # каждая ячейка будет состоять из 4 битов
+    # если в ячейке:
+    # - символ A, то 0001
+    # - символ B, то 0010
+    # - символ C, то 0100
+    # - символ D, то 1000
+    # - ничего, то 0000
+    representation: tuple[int, int, int, int, int] # первые 11 элементов - это коридор, потом идут комнаты
     energy: int = 0
 
     def _get_obj_name(self, obj_pos: cell_tuple) -> str:
-        return self.representation[self._get_representation_index(obj_pos)]
+        return object_from_bitmap[self._get_obj_bitmap(obj_pos)]
     
+    def _get_obj_bitmap(self, obj_pos: cell_tuple) -> int:
+        
+        if obj_pos[0] == 0:
+            result = (self.representation[0] >> ((10 - obj_pos[1]) * 4)) & 0b1111
+            return result
+        room_index = (obj_pos[1] >> 1)
+        return (self.representation[room_index] >> ((depth_room  - obj_pos[0]) * 4)) & 0b1111
+    
+    def _objects_in_room_target_type(self, room_pos: int) -> bool:
+        return (bitmap_full_room_pos[room_pos] & self.representation[room_pos >> 1]) == self.representation[room_pos >> 1]
+
     def _waste_energy(self, cur_pos: cell_tuple, to: cell_tuple) -> int:
         obj_name = self._get_obj_name(cur_pos)
         return object_energy[obj_name] * (abs(to[1] - cur_pos[1]) + to[0] + cur_pos[0])
     
-    def _get_representation_index(self, pos: cell_tuple) -> int:
-        if pos[0] == 0:
-            return pos[1]
-        return 11 + (pos[1] // 2 - 1) * depth_room + (pos[0] - 1)
     
     def end_state(self) -> bool:
-        return all(self.representation[11 + depth_room * room_number + cur_depth] == obj_name \
-                    for cur_depth in range(depth_room) \
-                    for room_number, obj_name in enumerate(object_names))
+        return self.representation[0] == 0 and \
+                all(self._objects_in_room_target_type(room_pos) for room_pos in room_position_numbers)
     
+    #TODO
     def generate_next_states(self) -> Generator['State', None, None]:
         for obj_cell in self._get_object_cells_in_hallway():
             obj_name = self._get_obj_name(obj_cell)
             target_room = object_room[obj_name]
             top_obj_in_room_cell = self._get_top_empty_in_room_cell(target_room)
-            if self._can_enter_room(obj_cell) and self._can_move_in_hallway(obj_cell, (0, top_obj_in_room_cell[1])):
+            if self._can_enter_room(obj_cell):
                 yield self._move_object(obj_cell, top_obj_in_room_cell)
 
         for room_pos in room_position_numbers:
             obj_cell = self._get_top_obj_in_room_cell(room_pos)
-            
             if obj_cell is None:
                 continue
-            
             obj_name = self._get_obj_name(obj_cell)
-            if obj_cell[1] == object_room[obj_name] and \
-                all(x == "" or x == obj_name for x in self._get_object_names_in_room(room_pos)):
+            if self._objects_in_room_target_type(room_pos):
                     continue
             
-            available_hallway_cells = [(0, i) for i in range(11) if i not in room_position_numbers]
+            available_hallway_cells = ((0, i) for i in range(11) if i not in room_position_numbers)
             for cell in available_hallway_cells:
                 if self._can_move_in_hallway(obj_cell, cell):
                     yield self._move_object(obj_cell, cell)
 
-            if self._can_enter_room(obj_cell) and self._can_move_in_hallway(obj_cell, (0, object_room[obj_name])):
+            if self._can_enter_room(obj_cell):
                 target_cell = self._get_top_empty_in_room_cell(object_room[obj_name])
                 yield self._move_object(obj_cell, target_cell)
 
     # Эвристика для алгоритма A*
+    #TODO
     def calculate_heuristic(self) -> int:
         total_cost = 0
         for obj_cell in self._get_object_cells_in_hallway():
@@ -88,10 +121,9 @@ class State:
 
 
         for room_x in room_position_numbers:
-            objects_in_room = [(depth + 1, room_x) for depth, obj_name \
-                               in enumerate(self._get_object_names_in_room(room_x))
-                               if obj_name != '']
-            for obj_cell in objects_in_room:
+            objects_in_room = self._get_objects_in_room(room_x)
+            objects_in_room_cells = [(depth_room - len(objects_in_room) + depth + 1, room_x) for depth, _ in enumerate(objects_in_room)]
+            for obj_cell in objects_in_room_cells:
                 obj_name = self._get_obj_name(obj_cell)
                 target_room_x = object_room[obj_name]
                 if target_room_x != room_x:
@@ -100,25 +132,41 @@ class State:
                     total_cost += min_distance * object_energy[obj_name]
         return total_cost
 
+    #TODO
     def _move_object(self, cur_pos: cell_tuple, to_pos: cell_tuple) -> 'State':
         new_representation = list(self.representation)
-        from_index, to_index = self._get_representation_index(cur_pos), self._get_representation_index(to_pos)
-        new_representation[from_index], new_representation[to_index] = \
-            new_representation[to_index], new_representation[from_index]
+
+        def _set_bitmap(pos: cell_tuple, bitmap: int):
+            if pos[0] == 0:
+                bit_pos = (10 - pos[1]) * 4
+                clear_mask = ~(0b1111 << bit_pos)
+                new_representation[0] &= clear_mask
+                new_representation[0] |= (bitmap & 0b1111) << bit_pos
+                #time.sleep(2)
+            else:
+                arr_index = pos[1] // 2
+                bit_pos = (depth_room - pos[0]) * 4
+                clear_mask = ~(0b1111 << bit_pos)
+                new_representation[arr_index] &= clear_mask
+                new_representation[arr_index] |= (bitmap & 0b1111) << bit_pos
+
+        bitmap = self._get_obj_bitmap(cur_pos)
+        _set_bitmap(to_pos, bitmap)
+        _set_bitmap(cur_pos, 0)
         wasted_energy = self._waste_energy(cur_pos, to_pos)
         return State(
-            representation=tuple(new_representation),
+            representation=tuple(new_representation),  # type: ignore
             energy=self.energy + wasted_energy
         )
     
-    def _get_object_names_in_room(self, room_number: int) -> list[str]:
-        list_representation = list(self.representation)
-        start_index = 11 + depth_room * (room_number // 2 - 1)
-        return list_representation[start_index: start_index + depth_room]
+    
+    def _get_objects_in_room(self, room_number: int) -> list[int]:
+        return [self._get_obj_bitmap((i + 1, room_number)) for i in range(depth_room) \
+                if self._get_obj_bitmap((i + 1, room_number)) != 0]
 
     
     def _get_object_cells_in_hallway(self) -> Generator[cell_tuple, None, None]:
-        return ((0, i) for i in range(11) if self.representation[i] != '')
+        return ((0, i) for i in range(11) if self._get_obj_bitmap((0, i)) != 0)
 
     def _get_top_empty_in_room_cell(self, room_number: int) -> cell_tuple:
         top_obj_in_room_cell = self._get_top_obj_in_room_cell(room_number)
@@ -127,31 +175,29 @@ class State:
         return top_obj_in_room_cell[0] - 1, room_number
     
     def _get_top_obj_in_room_cell(self, room_number: int) -> cell_tuple | None:
-        objects_in_room = self._get_object_names_in_room(room_number)
-        top_depth = 0
-        for depth in range(depth_room):
-            if objects_in_room[depth] != '':
-                break
-            top_depth += 1
-        if top_depth == depth_room:
+        objects_in_room = self._get_objects_in_room(room_number)
+        if len(objects_in_room) == 0:
             return None
-        return top_depth + 1, room_number
+        return depth_room - len(objects_in_room) + 1, room_number
 
     def _can_enter_room(self, obj_cell: cell_tuple) -> bool:
         obj_name = self._get_obj_name(obj_cell)
-        room_number = object_room[obj_name]
-        return all(x == '' or x == obj_name for x in self._get_object_names_in_room(room_number)) and \
-              self._can_move_in_hallway(obj_cell, (0, room_number))
+        room_pos = object_room[obj_name]
+        return self._objects_in_room_target_type(room_pos) and self._can_move_in_hallway(obj_cell, (0, room_pos))
     
-    def _can_move_in_hallway(self, obj_cell: cell_tuple, hallway_cell: cell_tuple) -> bool:
-        min_coord = min(hallway_cell[1], obj_cell[1])
-        max_coord = max(hallway_cell[1], obj_cell[1])
-        obj_name = self._get_obj_name(obj_cell)
-        return all(self.representation[i] == '' for i in range(11) \
-                   if self.representation[i] != obj_name and min_coord <= i <= max_coord)
+    def _can_move_in_hallway(self, src_cell: cell_tuple, target_cell: cell_tuple) -> bool:
+        y0, y1 = src_cell[1], target_cell[1]
+        if y0 == y1:
+            # Нужна только проверка двери (клетка (0, y0) должна быть свободна) — её ниже охватит общий цикл.
+            pass
+        step = 1 if y1 > y0 else -1
+        # Проверяем ВСЕ клетки коридора по пути, исключая стартовую, включая целевую.
+        for y in range(y0 + step, y1 + step, step):
+            if self._get_obj_bitmap((0, y)) != 0:
+                return False
+        return True
 
-
-    def get_representation(self) -> tuple[str, ...]:
+    def get_representation(self) -> tuple[int, ...]:
         return self.representation
     
     def __lt__(self, other: 'State'):
@@ -169,11 +215,9 @@ def solve(lines: list[str]) -> int:
         минимальная энергия для достижения целевой конфигурации
     """
     # TODO: Реализация алгоритма
-    global depth_room
     heap: list[tuple[int, State]] = []
     result = INF
     repr_state = get_start_representation_state(lines)
-    depth_room = (len(repr_state) - 11) // 4
     heapq.heappush(heap, (0, State(repr_state)))
     while len(heap) > 0:
         _, cur_state = heapq.heappop(heap)
@@ -194,18 +238,20 @@ def solve(lines: list[str]) -> int:
 
 
 
-def get_start_representation_state(lines) -> tuple[str, ...]:
-    hallway = []
+def get_start_representation_state(lines) -> tuple[int, int, int, int, int]:
+    global depth_room
+    depth_room = len(lines) - 3
+    hallway = 0
     for i in range(1, 12):
         temp = lines[1][i] if lines[1][i] != '.' else ''
-        hallway.append(temp)
-    depth = len(lines) - 3
-    rooms = [[], [], [], []]
+        hallway |= ((object_to_bitmap[temp]) << ((11 - i) << 2))
+    
+    rooms = [0, 0, 0, 0]
     for i in (3, 5, 7, 9):
-        for j in range(2, 2 + depth):
+        for j in range(2, 2 + depth_room):
             temp = lines[j][i] if lines[j][i] != '.' else ''
-            rooms[i // 2 - 1].append(temp)
-    return tuple(hallway + rooms[0] + rooms[1] + rooms[2] + rooms[3])
+            rooms[i // 2 - 1] |= ((object_to_bitmap[temp]) << ((depth_room + 1 - j) << 2))
+    return hallway, rooms[0], rooms[1], rooms[2], rooms[3]
 
 
 def main():

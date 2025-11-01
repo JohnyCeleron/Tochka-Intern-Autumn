@@ -9,7 +9,7 @@ removed_hallways: set[tuple[str, str]]
 graph: defaultdict[str, list[str]]
 
 def _build_graph(edges: list[tuple[str, str]]) -> defaultdict[str, list[str]]:
-    graph: defaultdict[str, list[str]] = defaultdict()
+    graph: defaultdict[str, list[str]] = defaultdict(list)
     for u, v in edges:
         graph[u].append(v)
         graph[v].append(u)
@@ -59,8 +59,38 @@ def _next_node(virus_pos: str, target_gateway: str) -> str:
             candidates.append(neighbour)
     return min(candidates)
 
+def _get_disconnected_hallways() -> list[tuple[str, str]]:
+    global removed_hallways, gateway_hallways
 
-def solve(edges: list[tuple[str, str]]) -> list[str]:
+    virus_pos = 'a'
+    removed_hallways = set()
+    
+    def dfs(virus_pos: str) -> list[tuple[str, str]] | None:
+        if _reached_gateway(virus_pos):
+            return None
+        target = _get_target_gateway(virus_pos)
+        if target is None:
+            return []
+        for gate, node in [
+            hallway for hallway in gateway_hallways if hallway not in removed_hallways
+        ]:
+            removed_hallways.add((gate, node))
+            new_target = _get_target_gateway(virus_pos)
+            if new_target is None:
+                return [(gate, node)]
+            new_pos = _next_node(virus_pos, new_target)
+            tail = dfs(new_pos)
+            if tail is None:
+                removed_hallways.remove((gate, node))
+                continue
+            return [(gate, node)] + tail
+
+    answer = dfs(virus_pos)
+    return answer if answer else []
+
+
+
+def solve(edges: list[tuple[str, str]]) -> list[tuple[str, str]]:
     """
     Решение задачи об изоляции вируса
 
@@ -70,14 +100,15 @@ def solve(edges: list[tuple[str, str]]) -> list[str]:
     Returns:
         список отключаемых коридоров в формате "Шлюз-узел"
     """
-    result = []
+    global gateway_hallways, gateways, graph
+
     edges = list(map(lambda edge: (edge[1], edge[0]) if edge[1].isupper() else edge, edges))
     gateway_hallways = list(
         sorted(filter(lambda edge: edge[0].isupper(), edges))
     )
     graph = _build_graph(edges)
     gateways = [x for x in graph if x.isupper()]
-    return result
+    return _get_disconnected_hallways()
 
 
 def main():
@@ -91,7 +122,7 @@ def main():
 
     result = solve(edges)
     for edge in result:
-        print(edge)
+        print(f"{edge[0]}-{edge[1]}")
 
 
 if __name__ == "__main__":

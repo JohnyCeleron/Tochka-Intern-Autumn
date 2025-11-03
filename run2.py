@@ -30,6 +30,7 @@ def _get_target_gateway(virus_pos: str) -> str | None:
             (dist == best_dist and (best_gate is not None and gateway < best_gate)):
             best_gate = gateway
             best_dist = dist
+            
     return best_gate
 
 
